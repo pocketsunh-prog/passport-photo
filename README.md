@@ -26,81 +26,92 @@ An Android app for capturing and uploading passport photos that comply with Immi
 - **Save to Gallery** - Save processed photo as JPEG
 - **Save No Background** - Remove background and save as PNG with transparency
 
-## Passport Requirements Enforced
+## Technical Specifications
 
-| Requirement | Standard | Validation |
-|-------------|----------|------------|
-| Dimensions | 40 mm × 50 mm | Aspect ratio crop + resize |
-| Head Size | 32–36 mm (chin to top) | Face bounding box analysis |
-| Background | Plain white | Corner/edge color sampling |
-| Resolution | ≥ 1200 × 1600 px | Pixel dimension check |
-| File Format | JPEG, ≤ 5 MB | Format + size validation |
-| Lighting | No shadows/glare | Brightness & contrast analysis |
-| Pose | Frontal, neutral expression | Euler angle detection |
-| Accessories | No glasses/hats | Eye landmark + reflection detection |
+### System Requirements
 
-## Architecture
+| Requirement | Value |
+|-------------|-------|
+| Min SDK | 24 (Android 7.0) |
+| Target SDK | 35 (Android 15) |
+| Compile SDK | 35 |
+| Kotlin | 2.0.21 |
+| Java | 11 |
+| Gradle | 8.11.1 |
+| Android Gradle Plugin | 8.7.3 |
 
-- **UI**: Jetpack Compose with Material 3
-- **Camera**: CameraX (Preview + ImageCapture + ImageAnalysis)
-- **Face Detection**: Google ML Kit Face Detection
-- **Image Processing**: Android Bitmap API with EXIF support
-- **State Management**: ViewModel + StateFlow
-- **Navigation**: Jetpack Navigation Compose
-- **Permissions**: Accompanist Permissions
+### Build Configuration
 
-## Requirements
+| Setting | Value |
+|---------|-------|
+| Application ID | `com.passportphoto.app` |
+| Version Code | 1 |
+| Version Name | 1.0 |
+| Minify (Release) | Disabled |
+| ProGuard | Enabled (basic rules) |
+| Signing | RSA 2048-bit, SHA-256 |
 
-- Android Studio Hedgehog (2023.1.1) or newer
-- compileSdk 35, minSdk 24
-- Kotlin 2.0.21
-- A device or emulator with camera (API 24+)
+### Permissions
 
-## Building
+| Permission | Purpose | Required |
+|------------|---------|----------|
+| `CAMERA` | Camera access for photo capture | Yes |
+| `READ_MEDIA_IMAGES` | Read photos from gallery (Android 13+) | For upload |
+| `READ_EXTERNAL_STORAGE` | Read photos (Android 12 and below) | For upload |
+| `WRITE_EXTERNAL_STORAGE` | Save photos (Android 9 and below) | For save |
 
-### Debug
-```bash
-./gradlew assembleDebug
-```
+### Camera Specifications
 
-### Release
+| Feature | Specification |
+|---------|---------------|
+| Camera API | CameraX 1.4.1 |
+| Preview Resolution | 1280 × 720 |
+| Capture Resolution | 1920 × 2560 (max) |
+| Capture Mode | `CAPTURE_MODE_MAXIMIZE_QUALITY` |
+| Flash | Disabled |
+| JPEG Quality | 92-95% |
+| Face Detection | Google ML Kit 16.1.7 |
+| Detection Mode | `PERFORMANCE_MODE_ACCURATE` |
+| Min Face Size | 15% of image |
 
-The release build is configured with signing. The keystore is located at `keystore/passport-photo.keystore`.
+### Image Processing Pipeline
 
-> **Security Note**: The default keystore password is set to `passport123` for development. For production releases, set environment variables instead:
-> - `KEYSTORE_PASSWORD` — keystore password
-> - `KEY_ALIAS` — key alias
-> - `KEY_PASSWORD` — key password
+| Step | Description |
+|------|-------------|
+| 1. Load | Decode image from URI/File with EXIF correction |
+| 2. Crop | Crop to 40:50 aspect ratio (centered, biased toward top) |
+| 3. Resize | Scale to minimum 1200×1600 pixels |
+| 4. Save | Compress as JPEG (quality 92%) or PNG (transparent) |
 
-```bash
-# Build signed release APK
-./gradlew assembleRelease
+### Output Specifications
 
-# Output: app/build/outputs/apk/release/app-release.apk
-```
+| Format | Use Case | Extension |
+|--------|----------|-----------|
+| JPEG | Standard photo with background | `.jpg` |
+| PNG | Photo with transparent background | `.png` |
 
-### Generating a New Keystore
+### File Size Limits
 
-```bash
-keytool -genkeypair -v \
-  -keystore keystore/passport-photo.keystore \
-  -keyalg RSA -keysize 2048 -validity 10000 \
-  -alias passport-photo \
-  -storepass <your-password> \
-  -keypass <your-password> \
-  -dname "CN=Passport Photo, OU=Production, O=YourOrg, L=City, ST=State, C=US"
-```
+| Limit | Value |
+|-------|-------|
+| Max File Size | 5 MB |
+| Min Resolution | 1200 × 1600 pixels |
+| Aspect Ratio | 4:5 (width:height) |
 
-**Install on device:**
-```bash
-adb install app/build/outputs/apk/debug/app-debug.apk
-adb install app/build/outputs/apk/release/app-release.apk
+### Architecture
 
-## Download
+| Layer | Technology |
+|-------|------------|
+| UI | Jetpack Compose with Material 3 |
+| Camera | CameraX (Preview + ImageCapture + ImageAnalysis) |
+| Face Detection | Google ML Kit Face Detection |
+| Image Processing | Android Bitmap API with EXIF support |
+| State Management | ViewModel + StateFlow |
+| Navigation | Jetpack Navigation Compose |
+| Permissions | Accompanist Permissions |
+| Image Loading | Coil 2.7.0 |
 
-A pre-built signed release APK is available: [`PassportPhoto-v1.8-release.apk`](./PassportPhoto-v1.8-release.apk) (48.9 MB)
-
-## Project Structure
+### Project Structure
 
 ```
 app/src/main/java/com/passportphoto/app/
@@ -123,7 +134,7 @@ app/src/main/java/com/passportphoto/app/
         └── PermissionGate.kt    # Runtime permission handling
 ```
 
-## Dependencies
+### Dependencies
 
 | Library | Version | Purpose |
 |---------|---------|---------|
@@ -135,6 +146,64 @@ app/src/main/java/com/passportphoto/app/
 | Coil | 2.7.0 | Image loading |
 | Accompanist Permissions | 0.36.0 | Runtime permissions |
 | EXIF Interface | 1.3.7 | Image orientation handling |
+
+## Passport Requirements Enforced
+
+| Requirement | Standard | Validation |
+|-------------|----------|------------|
+| Dimensions | 40 mm × 50 mm | Aspect ratio crop + resize |
+| Head Size | 32–36 mm (chin to top) | Face bounding box analysis |
+| Background | Plain white | Corner/edge color sampling |
+| Resolution | ≥ 1200 × 1600 px | Pixel dimension check |
+| File Format | JPEG, ≤ 5 MB | Format + size validation |
+| Lighting | No shadows/glare | Brightness & contrast analysis |
+| Pose | Frontal, neutral expression | Euler angle detection |
+| Accessories | No glasses/hats | Eye landmark + reflection detection |
+
+## Building
+
+### Debug
+```bash
+./gradlew assembleDebug
+```
+
+### Release
+
+The release build is configured with signing. The keystore is located at `keystore/passport-photo.keystore`.
+
+> **Security Note**: The default keystore password is set to `passport123` for development. For production releases, set environment variables instead:
+> - `KEYSTORE_PASSWORD` — keystore password
+> - `KEY_ALIAS` — key alias
+> - `KEY_PASSWORD` — key password
+
+```bash
+# Build signed release APK
+./gradlew assembleRelease
+
+# Output: app/build/outputs/outputs/apk/release/app-release.apk
+```
+
+### Generating a New Keystore
+
+```bash
+keytool -genkeypair -v \
+  -keystore keystore/passport-photo.keystore \
+  -keyalg RSA -keysize 2048 -validity 10000 \
+  -alias passport-photo \
+  -storepass <your-password> \
+  -keypass <your-password> \
+  -dname "CN=Passport Photo, OU=Production, O=YourOrg, L=City, ST=State, C=US"
+```
+
+**Install on device:**
+```bash
+adb install app/build/outputs/apk/debug/app-debug.apk
+adb install app/build/outputs/apk/release/app-release.apk
+```
+
+## Download
+
+A pre-built signed release APK is available: [`PassportPhoto-v1.9-release.apk`](./PassportPhoto-v1.9-release.apk) (48.9 MB)
 
 ## License
 
