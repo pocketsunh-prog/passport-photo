@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Passport Photo</string>
+    <string name="take_photo">Take Photo</string>
+    <string name="upload_photo">Upload Photo</string>
+    <string name="passport_requirements">Passport Photo Requirements</string>
+    <string name="capture">Capture</string>
+    <string name="retake">Retake</string>
+    <string name="save">Save</string>
+    <string name="back">Back</string>
+    <string name="permission_required">Permission Required</string>
+    <string name="camera_permission_rationale">Camera permission is needed to take passport photos.</string>
+    <string name="storage_permission_rationale">Storage permission is needed to save and upload photos.</string>
+    <string name="grant_permission">Grant Permission</string>
+    <string name="no_face_detected">No face detected. Position your face in the frame.</string>
+    <string name="face_not_centered">Center your face in the oval guide.</string>
+    <string name="too_far">Move closer to the camera.</string>
+    <string name="too_close">Move back from the camera.</string>
+    <string name="not_frontal">Look straight at the camera with a neutral expression.</string>
+    <string name="tilted">Keep your head straight, not tilted.</string>
+    <string name="glasses_detected">Remove glasses for the photo.</string>
+    <string name="shadows_detected">Avoid shadows on your face and background.</string>
+    <string name="good_position">Good position! Hold steady.</string>
+    <string name="photo_saved">Photo saved successfully!</string>
+    <string name="photo_uploaded">Photo uploaded for verification.</string>
+    <string name="compliance_pass">Photo meets passport requirements.</string>
+    <string name="compliance_fail">Photo does not meet requirements.</string>
+    <string name="resolution_check">Resolution: %1$s</string>
+    <string name="file_size_check">File size: %1$s</string>
+</resources>
