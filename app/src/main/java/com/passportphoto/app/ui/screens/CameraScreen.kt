@@ -56,6 +56,8 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.passportphoto.app.camera.CameraManager
 import com.passportphoto.app.camera.CameraViewModel
 import com.passportphoto.app.ui.components.FaceGuideOverlay
@@ -64,6 +66,7 @@ import com.passportphoto.app.ui.theme.AccentRed
 import com.passportphoto.app.ui.theme.OverlayGreen
 import com.passportphoto.app.ui.theme.OverlayRed
 import com.passportphoto.app.ui.theme.OverlayYellow
+import kotlinx.coroutines.delay
 
 @Composable
 fun CameraScreen(
@@ -81,9 +84,12 @@ fun CameraScreen(
     val isCameraReady by viewModel.isCameraReady.collectAsState()
     val captureError by viewModel.captureError.collectAsState()
 
-    // Initialize camera before creating PreviewView
+    var isInitialized by remember { mutableStateOf(false) }
+
+    // Initialize camera
     LaunchedEffect(Unit) {
         viewModel.initialize(context)
+        isInitialized = true
     }
 
     val previewView = remember {
@@ -97,11 +103,12 @@ fun CameraScreen(
         }
     }
 
-    // Start camera after preview view is created
-    DisposableEffect(previewView) {
-        viewModel.startCamera(lifecycleOwner, previewView)
-        onDispose {
-            // Cleanup handled by ViewModel.onCleared()
+    // Start camera when lifecycle is RESUMED
+    LaunchedEffect(lifecycleOwner, isInitialized) {
+        if (isInitialized) {
+            lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                viewModel.startCamera(lifecycleOwner, previewView)
+            }
         }
     }
 
@@ -279,6 +286,7 @@ fun CameraScreen(
 
             Text(
                 text = when {
+                    !isInitialized -> "Loading..."
                     !isCameraReady -> "Initializing camera..."
                     isCapturing -> "Capturing..."
                     analysisResult.isCompliant -> "Ready to capture!"
@@ -286,6 +294,7 @@ fun CameraScreen(
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = when {
+                    !isInitialized -> Color.White.copy(alpha = 0.7f)
                     !isCameraReady -> Color.White.copy(alpha = 0.7f)
                     analysisResult.isCompliant -> OverlayGreen
                     else -> Color.White

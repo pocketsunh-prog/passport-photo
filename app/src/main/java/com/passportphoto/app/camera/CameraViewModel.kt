@@ -2,6 +2,9 @@ package com.passportphoto.app.camera
 
 import android.content.ContentValues
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -18,6 +21,8 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.OutputStream
+import java.util.LinkedList
+import kotlin.math.abs
 
 /**
  * ViewModel managing camera state, face analysis, and photo processing.

@@ -22,6 +22,10 @@ An Android app for capturing and uploading passport photos that comply with Immi
 - Corrects EXIF orientation
 - Optimized JPEG compression (max 5 MB)
 
+### Save Options
+- **Save to Gallery** - Save processed photo as JPEG
+- **Save No Background** - Remove background and save as PNG with transparency
+
 ## Passport Requirements Enforced
 
 | Requirement | Standard | Validation |
@@ -94,7 +98,7 @@ adb install app/build/outputs/apk/release/app-release.apk
 
 ## Download
 
-A pre-built signed release APK is available: [`PassportPhoto-v1.7-release.apk`](./PassportPhoto-v1.7-release.apk) (48.9 MB)
+A pre-built signed release APK is available: [`PassportPhoto-v1.8-release.apk`](./PassportPhoto-v1.8-release.apk) (48.9 MB)
 
 ## Project Structure
 
