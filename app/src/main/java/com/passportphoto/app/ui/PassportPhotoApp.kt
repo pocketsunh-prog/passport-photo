@@ -23,6 +23,7 @@ import com.passportphoto.app.camera.CameraViewModel
 import com.passportphoto.app.ui.screens.CameraScreen
 import com.passportphoto.app.ui.screens.GalleryPickerScreen
 import com.passportphoto.app.ui.screens.HomeScreen
+import com.passportphoto.app.ui.screens.LocalFileValidateScreen
 import com.passportphoto.app.ui.screens.PermissionGate
 import com.passportphoto.app.ui.screens.PreviewScreen
 import kotlinx.coroutines.launch
@@ -30,11 +31,6 @@ import java.io.File
 
 /**
  * Main navigation for the Passport Photo app.
- * Routes:
- * - home: Home screen with Take Photo / Upload Photo options
- * - camera: Camera screen with real-time face detection (requires permission)
- * - gallery: Gallery picker for uploading existing photos
- * - preview: Preview and validation screen
  */
 @Composable
 fun PassportPhotoApp() {
@@ -61,6 +57,9 @@ fun PassportPhotoApp() {
                     },
                     onUploadPhoto = {
                         navController.navigate("gallery")
+                    },
+                    onValidateLocalFile = {
+                        navController.navigate("validate")
                     }
                 )
             }
@@ -92,6 +91,22 @@ fun PassportPhotoApp() {
                     },
                     onBack = {
                         navController.popBackStack()
+                    }
+                )
+            }
+
+            // Local file validate screen
+            composable("validate") {
+                LocalFileValidateScreen(
+                    viewModel = viewModel,
+                    onBack = {
+                        navController.popBackStack()
+                    },
+                    onSaved = {
+                        scope.launch {
+                            showSnackbar = "Photo saved to gallery!"
+                        }
+                        navController.popBackStack("home", inclusive = false)
                     }
                 )
             }

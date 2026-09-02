@@ -3,6 +3,7 @@ package com.passportphoto.app.camera
 import android.annotation.SuppressLint
 import android.content.Context
 import android.util.Log
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
@@ -39,6 +40,7 @@ class CameraManager(private val context: Context) {
     private var imageCapture: ImageCapture? = null
     private var imageAnalysis: ImageAnalysis? = null
     private var preview: Preview? = null
+    private var camera: Camera? = null
     private var currentFacing: CameraFacing = CameraFacing.FRONT
     private val analysisExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val isCameraReady = AtomicBoolean(false)
@@ -157,7 +159,7 @@ class CameraManager(private val context: Context) {
             CameraFacing.BACK -> CameraSelector.DEFAULT_BACK_CAMERA
         }
 
-        provider.bindToLifecycle(
+        camera = provider.bindToLifecycle(
             lifecycleOwner,
             cameraSelector,
             preview,
@@ -377,6 +379,32 @@ class CameraManager(private val context: Context) {
             notices = listOf(PhotoNotice.NO_FACE),
             isCompliant = false
         )
+    }
+
+    /**
+     * Set zoom level (0.0 to 1.0).
+     * 0.0 = no zoom (wide), 1.0 = maximum zoom.
+     */
+    fun setZoom(zoomLevel: Float) {
+        val cam = camera ?: return
+        val clampedZoom = zoomLevel.coerceIn(0f, 1f)
+        cam.cameraControl.setLinearZoom(clampedZoom)
+    }
+
+    /**
+     * Get current zoom level (0.0 to 1.0).
+     */
+    fun getCurrentZoom(): Float {
+        val cam = camera ?: return 0f
+        val zoomState = cam.cameraInfo.zoomState.value ?: return 0f
+        val minZoom = zoomState.minZoomRatio
+        val maxZoom = zoomState.maxZoomRatio
+        val currentZoom = zoomState.zoomRatio
+        return if (maxZoom > minZoom) {
+            (currentZoom - minZoom) / (maxZoom - minZoom)
+        } else {
+            0f
+        }
     }
 
     fun capturePhoto(

@@ -40,7 +40,8 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun HomeScreen(
     onTakePhoto: () -> Unit,
-    onUploadPhoto: () -> Unit
+    onUploadPhoto: () -> Unit,
+    onValidateLocalFile: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -108,6 +109,27 @@ fun HomeScreen(
             Spacer(modifier = Modifier.width(12.dp))
             Text(
                 text = "Upload Photo",
+                style = MaterialTheme.typography.titleLarge
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedButton(
+            onClick = onValidateLocalFile,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(64.dp),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Icon(
+                Icons.Default.CheckCircle,
+                contentDescription = null,
+                modifier = Modifier.size(28.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = "Validate Local File",
                 style = MaterialTheme.typography.titleLarge
             )
         }

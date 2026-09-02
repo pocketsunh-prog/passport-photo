@@ -61,6 +61,9 @@ class CameraViewModel : ViewModel() {
     private val _isCameraReady = MutableStateFlow(false)
     val isCameraReady: StateFlow<Boolean> = _isCameraReady.asStateFlow()
 
+    private val _zoomLevel = MutableStateFlow(0f)
+    val zoomLevel: StateFlow<Float> = _zoomLevel.asStateFlow()
+
     private val _validationResult = MutableStateFlow<PassportValidator.ValidationResult?>(null)
     val validationResult: StateFlow<PassportValidator.ValidationResult?> = _validationResult.asStateFlow()
 
@@ -159,6 +162,16 @@ class CameraViewModel : ViewModel() {
 
     fun clearCaptureError() {
         _captureError.value = null
+    }
+
+    fun setZoom(zoomLevel: Float) {
+        val clampedZoom = zoomLevel.coerceIn(0f, 1f)
+        _zoomLevel.value = clampedZoom
+        cameraManager?.setZoom(clampedZoom)
+    }
+
+    fun getCurrentZoom(): Float {
+        return cameraManager?.getCurrentZoom() ?: 0f
     }
 
     fun processCapturedImage(context: Context, file: File) {
@@ -264,6 +277,77 @@ class CameraViewModel : ViewModel() {
     }
 
     /**
+     * Save a URI directly to the gallery (for local file validation).
+     */
+    fun saveUriToGallery(context: Context, uri: Uri): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, "passport_${System.currentTimeMillis()}.jpg")
+                    put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                    put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/PassportPhotos")
+                }
+                val destUri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+                    ?: return false
+                val outputStream = context.contentResolver.openOutputStream(destUri) ?: return false
+                val inputStream = context.contentResolver.openInputStream(uri) ?: return false
+                outputStream.use { os ->
+                    inputStream.use { ins ->
+                        ins.copyTo(os)
+                    }
+                }
+                true
+            } else {
+                val picturesDir = File(
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                    "PassportPhotos"
+                ).apply { mkdirs() }
+                val destFile = File(picturesDir, "passport_${System.currentTimeMillis()}.jpg")
+                val outputStream = FileOutputStream(destFile)
+                val inputStream = context.contentResolver.openInputStream(uri) ?: return false
+                outputStream.use { os ->
+                    inputStream.use { ins ->
+                        ins.copyTo(os)
+                    }
+                }
+                true
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    /**
+     * Save a URI with transparent background.
+     */
+    fun saveUriWithTransparentBackground(context: Context, uri: Uri): Boolean {
+        return try {
+            val inputStream = context.contentResolver.openInputStream(uri) ?: return false
+            val bitmap = BitmapFactory.decodeStream(inputStream)
+            inputStream.close()
+            if (bitmap == null) return false
+
+            val transparentBitmap = removeBackground(bitmap)
+            bitmap.recycle()
+
+            if (transparentBitmap == null) {
+                // No background to replace, save original
+                saveUriToGallery(context, uri)
+                return true
+            }
+
+            val fileName = "passport_${System.currentTimeMillis()}_transparent.png"
+            saveBitmapToGallery(context, transparentBitmap, fileName, "image/png")
+            transparentBitmap.recycle()
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    /**
      * Save photo with transparent background.
      * Removes the background and saves as PNG for transparency support.
      */
@@ -288,30 +372,30 @@ class CameraViewModel : ViewModel() {
     private fun removeBackground(bitmap: Bitmap): Bitmap? {
         val w = bitmap.width
         val h = bitmap.height
-        val bgColor = getEdgeColor(bitmap)
 
+        // Create mutable copy with alpha channel
         val result = bitmap.copy(Bitmap.Config.ARGB_8888, true) ?: return null
         val pixels = IntArray(w * h)
         result.getPixels(pixels, 0, w, 0, 0, w, h)
 
+        // Create skin mask with wider range for body parts (hair, neck, shoulders)
         val skinMask = Array(h) { BooleanArray(w) }
         for (y in 0 until h) {
             for (x in 0 until w) {
-                if (isSkinColor(pixels[y * w + x])) {
+                if (isSkinOrBodyColor(pixels[y * w + x])) {
                     skinMask[y][x] = true
                 }
             }
         }
-        val protectedMask = expandMask(skinMask, w, h, radius = 4)
+        // Expand mask generously to protect hair, neck, shoulders
+        val protectedMask = expandMask(skinMask, w, h, radius = 8)
 
-        val bgR = Color.red(bgColor)
-        val bgG = Color.green(bgColor)
-        val bgB = Color.blue(bgColor)
-        val tolerance = 35
-
+        // Flood fill from edges to identify background
+        val backgroundMask = Array(h) { BooleanArray(w) }
         val visited = Array(h) { BooleanArray(w) }
         val queue = LinkedList<Pair<Int, Int>>()
 
+        // Add all edge pixels to queue (skip protected)
         for (x in 0 until w) {
             if (!protectedMask[0][x]) {
                 queue.add(x to 0)
@@ -333,26 +417,20 @@ class CameraViewModel : ViewModel() {
             }
         }
 
+        // BFS flood fill - mark all edge-connected non-skin pixels as background
         while (queue.isNotEmpty()) {
             val (x, y) = queue.poll() ?: continue
-            val pixel = pixels[y * w + x]
-            val pR = Color.red(pixel)
-            val pG = Color.green(pixel)
-            val pB = Color.blue(pixel)
 
-            val isSimilar = abs(pR - bgR) < tolerance &&
-                    abs(pG - bgG) < tolerance &&
-                    abs(pB - bgB) < tolerance
+            if (!protectedMask[y][x]) {
+                backgroundMask[y][x] = true
 
-            if (isSimilar) {
-                pixels[y * w + x] = Color.TRANSPARENT
-
+                // Add neighbors (4-directional)
                 val neighbors = listOf(
                     x - 1 to y, x + 1 to y,
                     x to y - 1, x to y + 1
                 )
                 for ((nx, ny) in neighbors) {
-                    if (nx in 0 until w && ny in 0 until h && !visited[ny][nx]) {
+                    if (nx in 0 until w && ny in 0 until h && !visited[ny][nx] && !protectedMask[ny][nx]) {
                         visited[ny][nx] = true
                         queue.add(nx to ny)
                     }
@@ -360,8 +438,74 @@ class CameraViewModel : ViewModel() {
             }
         }
 
+        // Second pass: also mark non-protected pixels surrounded by background
+        for (y in 1 until h - 1) {
+            for (x in 1 until w - 1) {
+                if (!protectedMask[y][x] && !backgroundMask[y][x]) {
+                    // Check if this pixel is mostly surrounded by background
+                    var bgNeighbors = 0
+                    var totalNeighbors = 0
+                    for (dy in -2..2) {
+                        for (dx in -2..2) {
+                            val ny = y + dy
+                            val nx = x + dx
+                            if (ny in 0 until h && nx in 0 until w) {
+                                totalNeighbors++
+                                if (backgroundMask[ny][nx]) bgNeighbors++
+                            }
+                        }
+                    }
+                    // If more than 50% of neighbors are background, mark as background
+                    if (bgNeighbors > totalNeighbors / 2) {
+                        backgroundMask[y][x] = true
+                    }
+                }
+            }
+        }
+
+        // Apply transparency to background pixels
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                if (backgroundMask[y][x]) {
+                    pixels[y * w + x] = Color.TRANSPARENT
+                }
+            }
+        }
+
         result.setPixels(pixels, 0, w, 0, 0, w, h)
         return result
+    }
+
+    /**
+     * Detect skin or body colors (hair, face, neck, shoulders).
+     * Uses multiple color ranges to cover various skin tones and hair colors.
+     */
+    private fun isSkinOrBodyColor(pixel: Int): Boolean {
+        val r = Color.red(pixel)
+        val g = Color.green(pixel)
+        val b = Color.blue(pixel)
+
+        // YCbCr skin detection
+        val y = (0.299 * r + 0.587 * g + 0.114 * b).toInt()
+        val cb = (128 - 0.168736 * r - 0.331264 * g + 0.5 * b).toInt()
+        val cr = (128 + 0.5 * r - 0.418688 * g - 0.081312 * b).toInt()
+
+        // Skin tone range
+        if (y > 60 && cb in 70..135 && cr in 125..180) return true
+
+        // Dark hair / dark clothing (low luminance, low saturation)
+        val maxC = maxOf(r, g, b)
+        val minC = minOf(r, g, b)
+        val saturation = if (maxC == 0) 0 else (maxC - minC)
+        if (y < 80 && saturation < 40) return true
+
+        // Light hair / blonde (high luminance, low saturation, warm tone)
+        if (y > 180 && saturation < 50 && r >= g && g >= b) return true
+
+        // Brown hair / warm tones
+        if (r > 80 && r < 200 && g > 50 && g < 160 && b > 30 && b < 120 && r >= g && g >= b) return true
+
+        return false
     }
 
     private fun getEdgeColor(bitmap: Bitmap): Int {
@@ -394,18 +538,6 @@ class CameraViewModel : ViewModel() {
             (totalG / count).toInt().coerceIn(0, 255),
             (totalB / count).toInt().coerceIn(0, 255)
         )
-    }
-
-    private fun isSkinColor(pixel: Int): Boolean {
-        val r = Color.red(pixel)
-        val g = Color.green(pixel)
-        val b = Color.blue(pixel)
-
-        val y = (0.299 * r + 0.587 * g + 0.114 * b).toInt()
-        val cb = (128 - 0.168736 * r - 0.331264 * g + 0.5 * b).toInt()
-        val cr = (128 + 0.5 * r - 0.418688 * g - 0.081312 * b).toInt()
-
-        return y > 80 && cb in 77..127 && cr in 133..173
     }
 
     private fun expandMask(mask: Array<BooleanArray>, w: Int, h: Int, radius: Int): Array<BooleanArray> {

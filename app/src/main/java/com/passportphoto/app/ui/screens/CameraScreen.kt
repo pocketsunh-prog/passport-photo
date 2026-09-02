@@ -30,6 +30,8 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.FrontHand
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -38,6 +40,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -83,6 +87,7 @@ fun CameraScreen(
     val currentFacing by viewModel.currentFacing.collectAsState()
     val isCameraReady by viewModel.isCameraReady.collectAsState()
     val captureError by viewModel.captureError.collectAsState()
+    val zoomLevel by viewModel.zoomLevel.collectAsState()
 
     var isInitialized by remember { mutableStateOf(false) }
 
@@ -283,6 +288,54 @@ fun CameraScreen(
             }
 
             Spacer(modifier = Modifier.height(12.dp))
+
+            // Zoom controls (only show for back camera)
+            if (currentFacing == CameraManager.CameraFacing.BACK && isCameraReady) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 32.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = { viewModel.setZoom(zoomLevel - 0.1f) },
+                        enabled = zoomLevel > 0f
+                    ) {
+                        Icon(
+                            Icons.Default.ZoomOut,
+                            contentDescription = "Zoom Out",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+
+                    Slider(
+                        value = zoomLevel,
+                        onValueChange = { viewModel.setZoom(it) },
+                        valueRange = 0f..1f,
+                        modifier = Modifier.weight(1f),
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color.White,
+                            activeTrackColor = Color.White,
+                            inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                        )
+                    )
+
+                    IconButton(
+                        onClick = { viewModel.setZoom(zoomLevel + 0.1f) },
+                        enabled = zoomLevel < 1f
+                    ) {
+                        Icon(
+                            Icons.Default.ZoomIn,
+                            contentDescription = "Zoom In",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+            }
 
             Text(
                 text = when {
