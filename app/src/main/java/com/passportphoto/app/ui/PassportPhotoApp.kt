@@ -23,7 +23,6 @@ import com.passportphoto.app.camera.CameraViewModel
 import com.passportphoto.app.ui.screens.CameraScreen
 import com.passportphoto.app.ui.screens.GalleryPickerScreen
 import com.passportphoto.app.ui.screens.HomeScreen
-import com.passportphoto.app.ui.screens.LocalFileValidateScreen
 import com.passportphoto.app.ui.screens.PermissionGate
 import com.passportphoto.app.ui.screens.PreviewScreen
 import kotlinx.coroutines.launch
@@ -53,13 +52,12 @@ fun PassportPhotoApp() {
             composable("home") {
                 HomeScreen(
                     onTakePhoto = {
+                        viewModel.reset()
                         navController.navigate("camera")
                     },
                     onUploadPhoto = {
+                        viewModel.reset()
                         navController.navigate("gallery")
-                    },
-                    onValidateLocalFile = {
-                        navController.navigate("validate")
                     }
                 )
             }
@@ -82,22 +80,9 @@ fun PassportPhotoApp() {
                 }
             }
 
-            // Gallery picker screen
+            // Gallery picker screen (merged with validation and save)
             composable("gallery") {
                 GalleryPickerScreen(
-                    onPhotoSelected = { uri ->
-                        val encodedUri = Uri.encode(uri.toString())
-                        navController.navigate("preview/uri/$encodedUri")
-                    },
-                    onBack = {
-                        navController.popBackStack()
-                    }
-                )
-            }
-
-            // Local file validate screen
-            composable("validate") {
-                LocalFileValidateScreen(
                     viewModel = viewModel,
                     onBack = {
                         navController.popBackStack()
@@ -125,8 +110,8 @@ fun PassportPhotoApp() {
                     photoUri = null,
                     viewModel = viewModel,
                     onRetake = {
-                        navController.popBackStack()
-                        navController.navigate("camera")
+                        viewModel.reset()
+                        navController.popBackStack("home", inclusive = false)
                     },
                     onSaved = {
                         scope.launch {
@@ -140,7 +125,7 @@ fun PassportPhotoApp() {
                 )
             }
 
-            // Preview screen (from gallery upload)
+            // Preview screen (from gallery upload - legacy, now handled in GalleryPickerScreen)
             composable(
                 route = "preview/uri/{uri}",
                 arguments = listOf(navArgument("uri") { type = NavType.StringType })
@@ -154,8 +139,8 @@ fun PassportPhotoApp() {
                     photoUri = uri,
                     viewModel = viewModel,
                     onRetake = {
-                        navController.popBackStack()
-                        navController.navigate("gallery")
+                        viewModel.reset()
+                        navController.popBackStack("home", inclusive = false)
                     },
                     onSaved = {
                         scope.launch {

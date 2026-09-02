@@ -241,7 +241,7 @@ class CameraManager(private val context: Context) {
 
         faceDetector.process(inputImage)
             .addOnSuccessListener { faces ->
-                val result = analyzeFaces(faces, imageWidth, imageHeight)
+                val result = analyzeFaces(faces, imageWidth, imageHeight, currentFacing)
                 callback.onAnalysisResult(result)
             }
             .addOnFailureListener { e ->
@@ -256,7 +256,8 @@ class CameraManager(private val context: Context) {
     private fun analyzeFaces(
         faces: List<Face>,
         imageWidth: Float,
-        imageHeight: Float
+        imageHeight: Float,
+        facing: CameraFacing = CameraFacing.FRONT
     ): FaceAnalysisResult {
         if (faces.isEmpty()) {
             return FaceAnalysisResult(
@@ -298,18 +299,23 @@ class CameraManager(private val context: Context) {
         val imageCenterY = imageHeight / 2f
 
         // Head size ratio: face height relative to image height
+        // ML Kit face bounding box is ~60-70% of full head height, so multiply by 1.4 to estimate full head
         val faceHeight = boundingBox.height().toFloat()
-        val headSizeRatio = faceHeight / imageHeight
+        val estimatedHeadHeight = faceHeight * 1.4f
+        val headSizeRatio = estimatedHeadHeight / imageHeight
 
         // Check if face is centered (within 15% tolerance)
         val offsetX = abs(faceCenterX - imageCenterX) / imageWidth
         val offsetY = abs(faceCenterY - imageCenterY) / imageHeight
         val isCentered = offsetX < 0.15f && offsetY < 0.2f
 
-        // Check head size (should be 50-80% of image height for passport)
-        val isGoodSize = headSizeRatio in 0.50f..0.80f
-        val tooFar = headSizeRatio < 0.50f
-        val tooClose = headSizeRatio > 0.80f
+        // Check head size (should be 64-72% of image height for passport)
+        // Front camera has wider FOV, so allow slightly larger range
+        val minSize = 0.55f
+        val maxSize = if (facing == CameraFacing.FRONT) 0.85f else 0.75f
+        val isGoodSize = headSizeRatio in minSize..maxSize
+        val tooFar = headSizeRatio < minSize
+        val tooClose = headSizeRatio > maxSize
 
         // Check if face is frontal (looking straight ahead)
         val rotY = face.headEulerAngleY // left-right rotation

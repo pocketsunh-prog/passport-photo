@@ -32,3 +32,4 @@ obj/
 # OS files
 Thumbs.db
 /gradle
+/.kotlin

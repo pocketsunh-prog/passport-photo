@@ -2,6 +2,7 @@ package com.passportphoto.app.ui.screens
 
 import android.content.Context
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -15,20 +16,28 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,77 +46,97 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.passportphoto.app.camera.CameraViewModel
+import com.passportphoto.app.camera.PassportValidator
 
+/**
+ * Merged screen for uploading, validating, and saving photos from gallery.
+ * Combines photo selection, validation, and save options in one flow.
+ */
 @Composable
 fun GalleryPickerScreen(
-    onPhotoSelected: (Uri) -> Unit,
-    onBack: () -> Unit
+    viewModel: CameraViewModel,
+    onBack: () -> Unit,
+    onSaved: () -> Unit
 ) {
     val context = LocalContext.current
     var selectedUri by remember { mutableStateOf<Uri?>(null) }
 
+    val validationResult by viewModel.validationResult.collectAsState()
+    val isProcessing by viewModel.isProcessing.collectAsState()
+
+    // Initialize ViewModel
+    LaunchedEffect(Unit) {
+        viewModel.initialize(context)
+    }
+
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let { selectedUri = it }
+        uri?.let {
+            selectedUri = it
+            viewModel.reset()
+        }
     }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .verticalScroll(rememberScrollState())
     ) {
         // Top bar
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Start,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
                 Icon(Icons.Default.ArrowBack, contentDescription = "Back")
             }
-            Spacer(modifier = Modifier.width(8.dp))
+
             Text(
                 text = "Upload Photo",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold
             )
-        }
 
-        Spacer(modifier = Modifier.height(32.dp))
+            IconButton(
+                onClick = {
+                    selectedUri = null
+                    viewModel.reset()
+                }
+            ) {
+                Icon(Icons.Default.Refresh, contentDescription = "Reset")
+            }
+        }
 
         // Instructions
         Text(
-            text = "Select a photo from your gallery",
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.onBackground,
-            textAlign = TextAlign.Center
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = "Choose a frontal photo with a white background.\nThe app will validate it against passport requirements.",
+            text = "Select a photo from your gallery to validate and save",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-            textAlign = TextAlign.Center
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 24.dp)
         )
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
         // Photo preview area
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(350.dp)
+                .padding(horizontal = 24.dp)
+                .height(320.dp)
                 .clip(RoundedCornerShape(16.dp)),
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(
@@ -115,45 +144,67 @@ fun GalleryPickerScreen(
             ),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
         ) {
-            if (selectedUri != null) {
-                AsyncImage(
-                    model = ImageRequest.Builder(context)
-                        .data(selectedUri)
-                        .crossfade(true)
-                        .build(),
-                    contentDescription = "Selected photo",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = androidx.compose.ui.layout.ContentScale.Fit
-                )
-            } else {
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        Icons.Default.PhotoLibrary,
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp),
-                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+            when {
+                isProcessing -> {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(48.dp),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "Validating...",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+                selectedUri != null -> {
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(selectedUri)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = "Selected photo",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "No photo selected",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                    )
+                }
+                else -> {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            Icons.Default.PhotoLibrary,
+                            contentDescription = null,
+                            modifier = Modifier.size(64.dp),
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "No photo selected",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        )
+                    }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
         // Select photo button
         Button(
             onClick = { imagePickerLauncher.launch("image/*") },
             modifier = Modifier
                 .fillMaxWidth()
+                .padding(horizontal = 24.dp)
                 .height(56.dp),
             shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(
@@ -163,79 +214,338 @@ fun GalleryPickerScreen(
             Icon(Icons.Default.PhotoLibrary, contentDescription = null)
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = "Choose from Gallery",
-                style = MaterialTheme.typography.titleLarge
-            )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Validate button (enabled when photo is selected)
-        Button(
-            onClick = {
-                selectedUri?.let { onPhotoSelected(it) }
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF4CAF50)
-            ),
-            enabled = selectedUri != null
-        ) {
-            Icon(Icons.Default.CloudUpload, contentDescription = null)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = "Validate Photo",
+                text = "Select Photo",
                 style = MaterialTheme.typography.titleLarge
             )
         }
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Tips
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-            )
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = "Tips for a valid photo:",
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
+        // Validation results
+        if (isProcessing) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(32.dp),
+                    color = MaterialTheme.colorScheme.primary
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                TipItem("Plain white background")
-                TipItem("Face is centered and well-lit")
-                TipItem("Neutral expression, mouth closed")
-                TipItem("No glasses or hats")
-                TipItem("High resolution (≥ 1200×1600)")
+                Text(
+                    text = "Validating...",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+            }
+        } else if (validationResult != null) {
+            ValidationResultCard(validationResult!!)
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            if (validationResult!!.isValid) {
+                Text(
+                    text = "✓ Photo meets passport requirements!",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = Color(0xFF4CAF50),
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(horizontal = 24.dp)
+                )
+            } else {
+                Text(
+                    text = "⚠ Photo needs adjustments",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = Color(0xFFFF9800),
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(horizontal = 24.dp)
+                )
+            }
+        } else if (selectedUri != null) {
+            Text(
+                text = "Click 'Validate Photo' to check requirements",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 24.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Validate button (show when photo selected)
+        if (selectedUri != null && !isProcessing) {
+            Button(
+                onClick = {
+                    selectedUri?.let { uri ->
+                        viewModel.validateUploadedImage(context, uri)
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .height(56.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF9C27B0)
+                )
+            ) {
+                Icon(Icons.Default.CheckCircle, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Validate Photo",
+                    style = MaterialTheme.typography.titleLarge
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
+        // Save buttons (show when photo selected)
+        if (selectedUri != null && !isProcessing) {
+            // Save with transparent background
+            Button(
+                onClick = {
+                    selectedUri?.let { uri ->
+                        val saved = viewModel.saveUriWithTransparentBackground(context, uri)
+                        if (saved) {
+                            onSaved()
+                        } else {
+                            Toast.makeText(context, "Failed to save photo", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .height(56.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF2196F3)
+                )
+            ) {
+                Icon(Icons.Default.Save, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Save No Background",
+                    style = MaterialTheme.typography.titleLarge
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Save with white background
+            Button(
+                onClick = {
+                    selectedUri?.let { uri ->
+                        val saved = viewModel.saveUriWithWhiteBackground(context, uri)
+                        if (saved) {
+                            onSaved()
+                        } else {
+                            Toast.makeText(context, "Failed to save photo", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .height(56.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFFF9800)
+                )
+            ) {
+                Icon(Icons.Default.Save, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Save White Background",
+                    style = MaterialTheme.typography.titleLarge
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Save as JPEG
+            Button(
+                onClick = {
+                    selectedUri?.let { uri ->
+                        val saved = viewModel.saveUriToGallery(context, uri)
+                        if (saved) {
+                            onSaved()
+                        } else {
+                            Toast.makeText(context, "Failed to save photo", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .height(56.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF4CAF50)
+                )
+            ) {
+                Icon(Icons.Default.Save, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Save to Gallery",
+                    style = MaterialTheme.typography.titleLarge
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
+    }
+}
+
+@Composable
+private fun ValidationResultCard(result: PassportValidator.ValidationResult) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp)
+        ) {
+            Text(
+                text = "Validation Results",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                InfoItem("Resolution", "${result.photoInfo.width} × ${result.photoInfo.height}")
+                InfoItem("Size", formatFileSize(result.photoInfo.fileSizeBytes))
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                InfoItem("Head", "${(result.photoInfo.headSizePercent * 100).toInt()}% of height")
+                InfoItem("DPI", "~${result.photoInfo.estimatedDpi}")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Spacer(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(Color.Gray.copy(alpha = 0.2f))
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            CheckItem("Resolution ≥ 1200×1600", result.resolutionOk)
+            CheckItem("File size ≤ 5 MB", result.fileSizeOk)
+            CheckItem("White background", result.backgroundOk)
+            CheckItem("Good lighting", result.brightnessOk)
+            CheckItem("Adequate contrast", result.contrastOk)
+            CheckItem("Head size 32-36mm", result.headSizeOk)
+
+            if (result.issues.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(Color.Gray.copy(alpha = 0.2f))
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "Issues:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFFFF9800)
+                )
+
+                result.issues.forEach { issue ->
+                    Text(
+                        text = "• ${issue.toDisplayString()}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFFFF9800),
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun TipItem(text: String) {
+private fun InfoItem(label: String, value: String) {
+    Column {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+@Composable
+private fun CheckItem(label: String, passed: Boolean) {
     Row(
-        modifier = Modifier.padding(vertical = 2.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = "• ",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.Bold
+        Icon(
+            imageVector = if (passed) Icons.Default.CheckCircle else Icons.Default.Error,
+            contentDescription = null,
+            tint = if (passed) Color(0xFF4CAF50) else Color(0xFFFF9800),
+            modifier = Modifier.size(20.dp)
         )
+        Spacer(modifier = Modifier.width(12.dp))
         Text(
-            text = text,
+            text = label,
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+            color = MaterialTheme.colorScheme.onSurface.copy(
+                alpha = if (passed) 0.8f else 0.6f
+            )
         )
+    }
+}
+
+private fun PassportValidator.ValidationIssue.toDisplayString(): String = when (this) {
+    PassportValidator.ValidationIssue.RESOLUTION_TOO_LOW -> "Image resolution is below 1200×1600 pixels"
+    PassportValidator.ValidationIssue.FILE_TOO_LARGE -> "File size exceeds 5 MB"
+    PassportValidator.ValidationIssue.BACKGROUND_NOT_WHITE -> "Background is not plain white"
+    PassportValidator.ValidationIssue.TOO_DARK -> "Image is too dark"
+    PassportValidator.ValidationIssue.TOO_BRIGHT -> "Image is too bright"
+    PassportValidator.ValidationIssue.LOW_CONTRAST -> "Image has low contrast"
+    PassportValidator.ValidationIssue.HEAD_TOO_SMALL -> "Head is too small in frame (need 32-36mm)"
+    PassportValidator.ValidationIssue.HEAD_TOO_LARGE -> "Head is too large in frame"
+    PassportValidator.ValidationIssue.NOT_PORTRAIT_ORIENTATION -> "Image should be in portrait orientation"
+}
+
+private fun formatFileSize(bytes: Long): String {
+    return when {
+        bytes >= 1024 * 1024 -> String.format("%.1f MB", bytes / (1024.0 * 1024.0))
+        bytes >= 1024 -> String.format("%.0f KB", bytes / 1024.0)
+        else -> "$bytes B"
     }
 }

@@ -191,10 +191,16 @@ class CameraViewModel : ViewModel() {
 
     fun validateUploadedImage(context: Context, uri: Uri) {
         viewModelScope.launch {
-            _isProcessing.value = true
-            val validation = passportValidator?.validatePhoto(uri)
-            _validationResult.value = validation
-            _isProcessing.value = false
+            try {
+                _isProcessing.value = true
+                _validationResult.value = null
+                val validation = passportValidator?.validatePhoto(uri)
+                _validationResult.value = validation
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                _isProcessing.value = false
+            }
         }
     }
 
@@ -367,6 +373,155 @@ class CameraViewModel : ViewModel() {
             e.printStackTrace()
             false
         }
+    }
+
+    /**
+     * Save photo with white background.
+     * Replaces the background with plain white and saves as JPEG.
+     */
+    fun saveWithWhiteBackground(context: Context, file: File): Boolean {
+        return try {
+            val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return false
+            val whiteBgBitmap = replaceBackgroundWithWhite(bitmap)
+            bitmap.recycle()
+
+            if (whiteBgBitmap == null) return false
+
+            val fileName = file.nameWithoutExtension + "_whitebg.jpg"
+            saveBitmapToGallery(context, whiteBgBitmap, fileName, "image/jpeg")
+            whiteBgBitmap.recycle()
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    /**
+     * Save URI with white background.
+     * Replaces the background with plain white and saves as JPEG.
+     */
+    fun saveUriWithWhiteBackground(context: Context, uri: Uri): Boolean {
+        return try {
+            val inputStream = context.contentResolver.openInputStream(uri) ?: return false
+            val bitmap = BitmapFactory.decodeStream(inputStream)
+            inputStream.close()
+            if (bitmap == null) return false
+
+            val whiteBgBitmap = replaceBackgroundWithWhite(bitmap)
+            bitmap.recycle()
+
+            if (whiteBgBitmap == null) return false
+
+            val fileName = "passport_${System.currentTimeMillis()}_whitebg.jpg"
+            saveBitmapToGallery(context, whiteBgBitmap, fileName, "image/jpeg")
+            whiteBgBitmap.recycle()
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    /**
+     * Replace background pixels with plain white (instead of transparent).
+     */
+    private fun replaceBackgroundWithWhite(bitmap: Bitmap): Bitmap? {
+        val w = bitmap.width
+        val h = bitmap.height
+
+        val result = bitmap.copy(Bitmap.Config.ARGB_8888, true) ?: return null
+        val pixels = IntArray(w * h)
+        result.getPixels(pixels, 0, w, 0, 0, w, h)
+
+        // Create skin/body mask
+        val skinMask = Array(h) { BooleanArray(w) }
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                if (isSkinOrBodyColor(pixels[y * w + x])) {
+                    skinMask[y][x] = true
+                }
+            }
+        }
+        val protectedMask = expandMask(skinMask, w, h, radius = 8)
+
+        // Flood fill from edges to identify background
+        val backgroundMask = Array(h) { BooleanArray(w) }
+        val visited = Array(h) { BooleanArray(w) }
+        val queue = LinkedList<Pair<Int, Int>>()
+
+        for (x in 0 until w) {
+            if (!protectedMask[0][x]) {
+                queue.add(x to 0)
+                visited[0][x] = true
+            }
+            if (!protectedMask[h - 1][x]) {
+                queue.add(x to h - 1)
+                visited[h - 1][x] = true
+            }
+        }
+        for (y in 0 until h) {
+            if (!protectedMask[y][0]) {
+                queue.add(0 to y)
+                visited[y][0] = true
+            }
+            if (!protectedMask[y][w - 1]) {
+                queue.add(w - 1 to y)
+                visited[y][w - 1] = true
+            }
+        }
+
+        while (queue.isNotEmpty()) {
+            val (x, y) = queue.poll() ?: continue
+            if (!protectedMask[y][x]) {
+                backgroundMask[y][x] = true
+                val neighbors = listOf(
+                    x - 1 to y, x + 1 to y,
+                    x to y - 1, x to y + 1
+                )
+                for ((nx, ny) in neighbors) {
+                    if (nx in 0 until w && ny in 0 until h && !visited[ny][nx] && !protectedMask[ny][nx]) {
+                        visited[ny][nx] = true
+                        queue.add(nx to ny)
+                    }
+                }
+            }
+        }
+
+        // Second pass for isolated background pockets
+        for (y in 1 until h - 1) {
+            for (x in 1 until w - 1) {
+                if (!protectedMask[y][x] && !backgroundMask[y][x]) {
+                    var bgNeighbors = 0
+                    var totalNeighbors = 0
+                    for (dy in -2..2) {
+                        for (dx in -2..2) {
+                            val ny = y + dy
+                            val nx = x + dx
+                            if (ny in 0 until h && nx in 0 until w) {
+                                totalNeighbors++
+                                if (backgroundMask[ny][nx]) bgNeighbors++
+                            }
+                        }
+                    }
+                    if (bgNeighbors > totalNeighbors / 2) {
+                        backgroundMask[y][x] = true
+                    }
+                }
+            }
+        }
+
+        // Replace background with white
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                if (backgroundMask[y][x]) {
+                    pixels[y * w + x] = Color.WHITE
+                }
+            }
+        }
+
+        result.setPixels(pixels, 0, w, 0, 0, w, h)
+        return result
     }
 
     private fun removeBackground(bitmap: Bitmap): Bitmap? {

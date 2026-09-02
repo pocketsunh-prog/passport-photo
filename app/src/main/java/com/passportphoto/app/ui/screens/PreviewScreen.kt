@@ -241,6 +241,39 @@ fun PreviewScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
+        // Save with white background button
+        Button(
+            onClick = {
+                val fileToSave = processedImage?.file ?: photoFile
+                fileToSave?.let { file ->
+                    val saved = viewModel.saveWithWhiteBackground(context, file)
+                    if (saved) {
+                        onSaved()
+                    } else {
+                        Toast.makeText(context, "Failed to save photo", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .height(56.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFFFF9800)
+            ),
+            enabled = !isProcessing && (processedImage != null || photoFile != null)
+        ) {
+            Icon(Icons.Default.Save, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Save White Background",
+                style = MaterialTheme.typography.titleLarge
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
         // Save normal button
         Button(
             onClick = {
@@ -355,14 +388,14 @@ private fun ValidationResultCard(result: PassportValidator.ValidationResult) {
                     text = "Issues to fix:",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFFF44336)
+                    color = Color(0xFFFF9800)
                 )
 
                 result.issues.forEach { issue ->
                     Text(
                         text = "• ${issue.toDisplayString()}",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color(0xFFF44336),
+                        color = Color(0xFFFF9800),
                         modifier = Modifier.padding(top = 4.dp)
                     )
                 }
@@ -399,7 +432,7 @@ private fun CheckItem(label: String, passed: Boolean) {
         Icon(
             imageVector = if (passed) Icons.Default.CheckCircle else Icons.Default.Error,
             contentDescription = null,
-            tint = if (passed) Color(0xFF4CAF50) else Color(0xFFF44336),
+            tint = if (passed) Color(0xFF4CAF50) else Color(0xFFFF9800),
             modifier = Modifier.size(20.dp)
         )
         Spacer(modifier = Modifier.width(12.dp))
