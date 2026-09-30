@@ -424,7 +424,7 @@ class CameraViewModel : ViewModel() {
     }
 
     /**
-     * Replace background pixels with plain white (instead of transparent).
+     * Replace background pixels with plain white (with smooth edges).
      */
     private fun replaceBackgroundWithWhite(bitmap: Bitmap): Bitmap? {
         val w = bitmap.width
@@ -434,106 +434,35 @@ class CameraViewModel : ViewModel() {
         val pixels = IntArray(w * h)
         result.getPixels(pixels, 0, w, 0, 0, w, h)
 
-        // Create skin/body mask
-        val skinMask = Array(h) { BooleanArray(w) }
-        for (y in 0 until h) {
-            for (x in 0 until w) {
-                if (isSkinOrBodyColor(pixels[y * w + x])) {
-                    skinMask[y][x] = true
-                }
-            }
-        }
-        val protectedMask = expandMask(skinMask, w, h, radius = 8)
-
-        // Flood fill from edges to identify background
-        val backgroundMask = Array(h) { BooleanArray(w) }
-        val visited = Array(h) { BooleanArray(w) }
-        val queue = LinkedList<Pair<Int, Int>>()
-
-        for (x in 0 until w) {
-            if (!protectedMask[0][x]) {
-                queue.add(x to 0)
-                visited[0][x] = true
-            }
-            if (!protectedMask[h - 1][x]) {
-                queue.add(x to h - 1)
-                visited[h - 1][x] = true
-            }
-        }
-        for (y in 0 until h) {
-            if (!protectedMask[y][0]) {
-                queue.add(0 to y)
-                visited[y][0] = true
-            }
-            if (!protectedMask[y][w - 1]) {
-                queue.add(w - 1 to y)
-                visited[y][w - 1] = true
-            }
-        }
-
-        while (queue.isNotEmpty()) {
-            val (x, y) = queue.poll() ?: continue
-            if (!protectedMask[y][x]) {
-                backgroundMask[y][x] = true
-                val neighbors = listOf(
-                    x - 1 to y, x + 1 to y,
-                    x to y - 1, x to y + 1
-                )
-                for ((nx, ny) in neighbors) {
-                    if (nx in 0 until w && ny in 0 until h && !visited[ny][nx] && !protectedMask[ny][nx]) {
-                        visited[ny][nx] = true
-                        queue.add(nx to ny)
-                    }
-                }
-            }
-        }
-
-        // Second pass for isolated background pockets
-        for (y in 1 until h - 1) {
-            for (x in 1 until w - 1) {
-                if (!protectedMask[y][x] && !backgroundMask[y][x]) {
-                    var bgNeighbors = 0
-                    var totalNeighbors = 0
-                    for (dy in -2..2) {
-                        for (dx in -2..2) {
-                            val ny = y + dy
-                            val nx = x + dx
-                            if (ny in 0 until h && nx in 0 until w) {
-                                totalNeighbors++
-                                if (backgroundMask[ny][nx]) bgNeighbors++
-                            }
-                        }
-                    }
-                    if (bgNeighbors > totalNeighbors / 2) {
-                        backgroundMask[y][x] = true
-                    }
-                }
-            }
-        }
-
-        // Replace background with white
-        for (y in 0 until h) {
-            for (x in 0 until w) {
-                if (backgroundMask[y][x]) {
-                    pixels[y * w + x] = Color.WHITE
-                }
-            }
-        }
+        val backgroundMask = computeBackgroundMask(pixels, w, h)
+        applyBackgroundWithFeathering(pixels, backgroundMask, w, h, Color.WHITE, false)
 
         result.setPixels(pixels, 0, w, 0, 0, w, h)
         return result
     }
 
+    /**
+     * Remove background (make transparent) with smooth edges.
+     */
     private fun removeBackground(bitmap: Bitmap): Bitmap? {
         val w = bitmap.width
         val h = bitmap.height
 
-        // Create mutable copy with alpha channel
         val result = bitmap.copy(Bitmap.Config.ARGB_8888, true) ?: return null
         val pixels = IntArray(w * h)
         result.getPixels(pixels, 0, w, 0, 0, w, h)
 
-        // Create skin mask with wider range for body parts (hair, neck, shoulders)
+        val backgroundMask = computeBackgroundMask(pixels, w, h)
+        applyBackgroundWithFeathering(pixels, backgroundMask, w, h, Color.TRANSPARENT, true)
+
+        result.setPixels(pixels, 0, w, 0, 0, w, h)
+        return result
+    }
+
+    /**
+     * Compute background mask using flood fill and skin detection.
+     */
+    private fun computeBackgroundMask(pixels: IntArray, w: Int, h: Int): Array<BooleanArray> {
         val skinMask = Array(h) { BooleanArray(w) }
         for (y in 0 until h) {
             for (x in 0 until w) {
@@ -542,15 +471,12 @@ class CameraViewModel : ViewModel() {
                 }
             }
         }
-        // Expand mask generously to protect hair, neck, shoulders
         val protectedMask = expandMask(skinMask, w, h, radius = 8)
 
-        // Flood fill from edges to identify background
         val backgroundMask = Array(h) { BooleanArray(w) }
         val visited = Array(h) { BooleanArray(w) }
         val queue = LinkedList<Pair<Int, Int>>()
 
-        // Add all edge pixels to queue (skip protected)
         for (x in 0 until w) {
             if (!protectedMask[0][x]) {
                 queue.add(x to 0)
@@ -572,18 +498,11 @@ class CameraViewModel : ViewModel() {
             }
         }
 
-        // BFS flood fill - mark all edge-connected non-skin pixels as background
         while (queue.isNotEmpty()) {
             val (x, y) = queue.poll() ?: continue
-
             if (!protectedMask[y][x]) {
                 backgroundMask[y][x] = true
-
-                // Add neighbors (4-directional)
-                val neighbors = listOf(
-                    x - 1 to y, x + 1 to y,
-                    x to y - 1, x to y + 1
-                )
+                val neighbors = listOf(x - 1 to y, x + 1 to y, x to y - 1, x to y + 1)
                 for ((nx, ny) in neighbors) {
                     if (nx in 0 until w && ny in 0 until h && !visited[ny][nx] && !protectedMask[ny][nx]) {
                         visited[ny][nx] = true
@@ -593,11 +512,9 @@ class CameraViewModel : ViewModel() {
             }
         }
 
-        // Second pass: also mark non-protected pixels surrounded by background
         for (y in 1 until h - 1) {
             for (x in 1 until w - 1) {
                 if (!protectedMask[y][x] && !backgroundMask[y][x]) {
-                    // Check if this pixel is mostly surrounded by background
                     var bgNeighbors = 0
                     var totalNeighbors = 0
                     for (dy in -2..2) {
@@ -610,7 +527,6 @@ class CameraViewModel : ViewModel() {
                             }
                         }
                     }
-                    // If more than 50% of neighbors are background, mark as background
                     if (bgNeighbors > totalNeighbors / 2) {
                         backgroundMask[y][x] = true
                     }
@@ -618,17 +534,84 @@ class CameraViewModel : ViewModel() {
             }
         }
 
-        // Apply transparency to background pixels
+        return backgroundMask
+    }
+
+    /**
+     * Apply background with edge feathering for smooth transitions.
+     */
+    private fun applyBackgroundWithFeathering(
+        pixels: IntArray, backgroundMask: Array<BooleanArray>,
+        w: Int, h: Int, newColor: Int, isTransparent: Boolean
+    ) {
+        val featherRadius = 3
+        val distanceMap = Array(h) { IntArray(w) { Int.MAX_VALUE } }
+        val queue = LinkedList<Pair<Int, Int>>()
+
         for (y in 0 until h) {
             for (x in 0 until w) {
                 if (backgroundMask[y][x]) {
-                    pixels[y * w + x] = Color.TRANSPARENT
+                    val neighbors = listOf(x - 1 to y, x + 1 to y, x to y - 1, x to y + 1)
+                    for ((nx, ny) in neighbors) {
+                        if (nx in 0 until w && ny in 0 until h && !backgroundMask[ny][nx]) {
+                            distanceMap[y][x] = 0
+                            queue.add(x to y)
+                            break
+                        }
+                    }
                 }
             }
         }
 
-        result.setPixels(pixels, 0, w, 0, 0, w, h)
-        return result
+        while (queue.isNotEmpty()) {
+            val (x, y) = queue.poll() ?: continue
+            val dist = distanceMap[y][x]
+            if (dist >= featherRadius) continue
+            val neighbors = listOf(x - 1 to y, x + 1 to y, x to y - 1, x to y + 1)
+            for ((nx, ny) in neighbors) {
+                if (nx in 0 until w && ny in 0 until h && backgroundMask[ny][nx] && distanceMap[ny][nx] > dist + 1) {
+                    distanceMap[ny][nx] = dist + 1
+                    queue.add(nx to ny)
+                }
+            }
+        }
+
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                if (!backgroundMask[y][x]) continue
+                val distance = distanceMap[y][x]
+                val originalPixel = pixels[y * w + x]
+
+                if (distance > featherRadius) {
+                    pixels[y * w + x] = newColor
+                } else if (distance > 0) {
+                    val blendFactor = distance.toFloat() / featherRadius
+                    pixels[y * w + x] = if (isTransparent) {
+                        val alpha = (blendFactor * 255).toInt().coerceIn(0, 255)
+                        Color.argb(alpha, Color.red(originalPixel), Color.green(originalPixel), Color.blue(originalPixel))
+                    } else {
+                        blendColors(originalPixel, newColor, blendFactor)
+                    }
+                } else {
+                    pixels[y * w + x] = if (isTransparent) {
+                        val alpha = (0.3f * 255).toInt().coerceIn(0, 255)
+                        Color.argb(alpha, Color.red(originalPixel), Color.green(originalPixel), Color.blue(originalPixel))
+                    } else {
+                        blendColors(originalPixel, newColor, 0.3f)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun blendColors(color1: Int, color2: Int, factor: Float): Int {
+        val f = factor.coerceIn(0f, 1f)
+        val invF = 1f - f
+        val r = (Color.red(color1) * invF + Color.red(color2) * f).toInt().coerceIn(0, 255)
+        val g = (Color.green(color1) * invF + Color.green(color2) * f).toInt().coerceIn(0, 255)
+        val b = (Color.blue(color1) * invF + Color.blue(color2) * f).toInt().coerceIn(0, 255)
+        val a = (Color.alpha(color1) * invF + Color.alpha(color2) * f).toInt().coerceIn(0, 255)
+        return Color.argb(a, r, g, b)
     }
 
     /**
